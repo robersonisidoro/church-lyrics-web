@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Church Lyrics Finder</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #12121f;
+    color: #eee;
+    font-family: 'Helvetica Neue', sans-serif;
+    min-height: 100vh;
+    padding: 24px 16px;
+  }
+  h1 {
+    color: #e94560;
+    font-size: 22px;
+    margin-bottom: 24px;
+    text-align: center;
+  }
+  #btn-identify {
+    display: block;
+    width: 100%;
+    padding: 18px;
+    background: #e94560;
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    margin-bottom: 16px;
+  }
+  #btn-identify:disabled {
+    background: #555;
+    cursor: not-allowed;
+  }
+  #status {
+    text-align: center;
+    color: #888;
+    font-size: 14px;
+    margin-bottom: 20px;
+    min-height: 20px;
+  }
+  .card {
+    background: #1c1c30;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .card-label {
+    font-size: 10px;
+    color: #444466;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+  }
+  #song-title {
+    font-size: 20px;
+    color: #00c8f0;
+    font-weight: bold;
+  }
+  #song-artist {
+    font-size: 14px;
+    color: #88ccdd;
+    margin-top: 4px;
+  }
+  #lyrics {
+    white-space: pre-wrap;
+    font-size: 15px;
+    line-height: 1.7;
+    color: #eee;
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+  #btn-copy {
+    display: block;
+    width: 100%;
+    padding: 14px;
+    background: #1a1a3e;
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-size: 15px;
+    cursor: pointer;
+    margin-top: 8px;
+  }
+  .hidden { display: none; }
+  #recording-indicator {
+    text-align: center;
+    color: #ff4444;
+    font-weight: bold;
+    margin-bottom: 12px;
+    font-size: 16px;
+  }
+</style>
+</head>
+<body>
+<h1>🎵 Church Lyrics Finder</h1>
+
+<button id="btn-identify" onclick="startIdentify()">🎤 Identificar Música</button>
+<div id="recording-indicator" class="hidden">⏺ Gravando... aguarde</div>
+<div id="status">Pressione o botão e aponte o celular para a caixa de som</div>
+
+<div class="card hidden" id="card-song">
+  <div class="card-label">Música Identificada</div>
+  <div id="song-title">—</div>
+  <div id="song-artist"></div>
+</div>
+
+<div class="card hidden" id="card-lyrics">
+  <div class="card-label">Letra</div>
+  <div id="lyrics"></div>
+</div>
+
+<button id="btn-copy" class="hidden" onclick="copyLyrics()">📋 Copiar Letra</button>
+
+<script>
+const RECORD_SECONDS = 6;
+
+async function startIdentify() {
+  const btn = document.getElementById('btn-identify');
+  const status = document.getElementById('status');
+  const indicator = document.getElementById('recording-indicator');
+
+  btn.disabled = true;
+  indicator.classList.remove('hidden');
+  status.textContent = `Gravando ${RECORD_SECONDS} segundos...`;
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const recorder = new MediaRecorder(stream);
+    const chunks = [];
+
+    recorder.ondataavailable = e => chunks.push(e.data);
+    recorder.start();
+
+    await new Promise(r => setTimeout(r, RECORD_SECONDS * 1000));
+    recorder.stop();
+    stream.getTracks().forEach(t => t.stop());
+
+    await new Promise(r => recorder.onstop = r);
+
+    indicator.classList.add('hidden');
+    status.textContent = 'Identificando música...';
+
+    const blob = new Blob(chunks, { type: 'audio/webm' });
+    const arrayBuffer = await blob.arrayBuffer();
+
+    const response = await fetch('/identify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: arrayBuffer
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      document.getElementById('song-title').textContent = data.title;
+      document.getElementById('song-artist').textContent = data.artist;
+      document.getElementById('lyrics').textContent = data.lyrics;
+      document.getElementById('card-song').classList.remove('hidden');
+      document.getElementById('card-lyrics').classList.remove('hidden');
+      document.getElementById('btn-copy').classList.remove('hidden');
+      status.textContent = '✓ Identificado com sucesso!';
+    } else {
+      status.textContent = data.error || 'Não foi possível identificar. Tente novamente.';
+    }
+
+  } catch (err) {
+    indicator.classList.add('hidden');
+    status.textContent = 'Erro: ' + err.message;
+  }
+
+  btn.disabled = false;
+}
+
+function copyLyrics() {
+  const text = document.getElementById('lyrics').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    document.getElementById('status').textContent = 'Letra copiada!';
+  });
+}
+</script>
+</body>
+</html>
