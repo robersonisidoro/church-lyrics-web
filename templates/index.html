@@ -19,9 +19,13 @@
     margin-bottom: 24px;
     text-align: center;
   }
+  .btn-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
   #btn-identify {
-    display: block;
-    width: 100%;
+    flex: 1;
     padding: 18px;
     background: #e94560;
     color: white;
@@ -30,12 +34,31 @@
     font-size: 18px;
     font-weight: bold;
     cursor: pointer;
+  }
+  #btn-identify:disabled { background: #555; cursor: not-allowed; }
+  #btn-stop {
+    padding: 18px 20px;
+    background: #333355;
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-size: 18px;
+    cursor: pointer;
+  }
+  #btn-stop:disabled { opacity: 0.3; cursor: not-allowed; }
+  #btn-clear {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    background: #2a1a2e;
+    color: #cc88aa;
+    border: none;
+    border-radius: 12px;
+    font-size: 14px;
+    cursor: pointer;
     margin-bottom: 16px;
   }
-  #btn-identify:disabled {
-    background: #555;
-    cursor: not-allowed;
-  }
+  #btn-clear.hidden { display: none; }
   #status {
     text-align: center;
     color: #888;
@@ -94,14 +117,62 @@
     margin-bottom: 12px;
     font-size: 16px;
   }
+  .manual-search-card {
+    background: #1c1c30;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .manual-search-card .card-label {
+    font-size: 10px;
+    color: #444466;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+  }
+  #manual-input {
+    width: 100%;
+    padding: 12px;
+    background: #12121f;
+    color: #eee;
+    border: 1px solid #333355;
+    border-radius: 8px;
+    font-size: 15px;
+    margin-bottom: 10px;
+    outline: none;
+  }
+  #manual-input:focus { border-color: #e94560; }
+  #btn-manual-search {
+    width: 100%;
+    padding: 12px;
+    background: #1a1a3e;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    cursor: pointer;
+  }
+  #btn-manual-search:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>
 </head>
 <body>
 <h1>🎵 Church Lyrics Finder</h1>
 
-<button id="btn-identify" onclick="startIdentify()">🎤 Identificar Música</button>
+<div class="btn-row">
+  <button id="btn-identify" onclick="startLoop()">🎤 Identificar Música</button>
+  <button id="btn-stop" onclick="stopLoop()" disabled>⏹ Parar</button>
+</div>
+
 <div id="recording-indicator" class="hidden">⏺ Gravando... aguarde</div>
 <div id="status">Pressione o botão e aponte o celular para a caixa de som</div>
+
+<button id="btn-clear" class="hidden" onclick="clearResults()">🗑 Limpar resultado</button>
+
+<div class="manual-search-card">
+  <div class="card-label">🔍 Busca Manual</div>
+  <input id="manual-input" type="text" placeholder="Nome da música, artista, trecho da letra..." />
+  <button id="btn-manual-search" onclick="manualSearch()">Buscar Letra</button>
+</div>
 
 <div class="card hidden" id="card-song">
   <div class="card-label">Música Identificada</div>
@@ -118,15 +189,41 @@
 
 <script>
 const RECORD_SECONDS = 6;
+let looping = false;
 
-async function startIdentify() {
-  const btn = document.getElementById('btn-identify');
+async function startLoop() {
+  looping = true;
+  document.getElementById('btn-identify').disabled = true;
+  document.getElementById('btn-stop').disabled = false;
+  document.getElementById('status').textContent = 'Iniciando...';
+
+  while (looping) {
+    const found = await runOnce();
+    if (found) {
+      stopLoop();
+      break;
+    }
+    if (looping) {
+      document.getElementById('status').textContent = 'Não identificado. Tentando novamente...';
+      await new Promise(r => setTimeout(r, 800));
+    }
+  }
+}
+
+function stopLoop() {
+  looping = false;
+  document.getElementById('btn-identify').disabled = false;
+  document.getElementById('btn-stop').disabled = true;
+  document.getElementById('recording-indicator').classList.add('hidden');
+  const status = document.getElementById('status');
+  if (status.textContent.includes('Tentando') || status.textContent.includes('Gravando') || status.textContent.includes('Identificando')) {
+    status.textContent = 'Pesquisa pausada.';
+  }
+}
+
+async function runOnce() {
   const status = document.getElementById('status');
   const indicator = document.getElementById('recording-indicator');
-
-  btn.disabled = true;
-  indicator.classList.remove('hidden');
-  status.textContent = `Gravando ${RECORD_SECONDS} segundos...`;
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -135,14 +232,18 @@ async function startIdentify() {
 
     recorder.ondataavailable = e => chunks.push(e.data);
     recorder.start();
+    indicator.classList.remove('hidden');
+    status.textContent = `Gravando ${RECORD_SECONDS} segundos...`;
 
     await new Promise(r => setTimeout(r, RECORD_SECONDS * 1000));
     recorder.stop();
     stream.getTracks().forEach(t => t.stop());
-
     await new Promise(r => recorder.onstop = r);
 
     indicator.classList.add('hidden');
+
+    if (!looping) return false;
+
     status.textContent = 'Identificando música...';
 
     const blob = new Blob(chunks, { type: 'audio/webm' });
@@ -157,23 +258,70 @@ async function startIdentify() {
     const data = await response.json();
 
     if (response.ok) {
-      document.getElementById('song-title').textContent = data.title;
-      document.getElementById('song-artist').textContent = data.artist;
-      document.getElementById('lyrics').textContent = data.lyrics;
-      document.getElementById('card-song').classList.remove('hidden');
-      document.getElementById('card-lyrics').classList.remove('hidden');
-      document.getElementById('btn-copy').classList.remove('hidden');
+      showResult(data.title, data.artist, data.lyrics);
       status.textContent = '✓ Identificado com sucesso!';
-    } else {
-      status.textContent = data.error || 'Não foi possível identificar. Tente novamente.';
+      return true;
     }
+
+    return false;
 
   } catch (err) {
     indicator.classList.add('hidden');
     status.textContent = 'Erro: ' + err.message;
+    return false;
+  }
+}
+
+async function manualSearch() {
+  const input = document.getElementById('manual-input');
+  const btn = document.getElementById('btn-manual-search');
+  const query = input.value.trim();
+  if (!query) return;
+
+  btn.disabled = true;
+  document.getElementById('status').textContent = 'Buscando letra...';
+
+  try {
+    const response = await fetch('/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query })
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      showResult(data.title || query, data.artist || '', data.lyrics);
+      document.getElementById('status').textContent = '✓ Letra encontrada!';
+    } else {
+      document.getElementById('status').textContent = data.error || 'Letra não encontrada.';
+    }
+  } catch (err) {
+    document.getElementById('status').textContent = 'Erro: ' + err.message;
   }
 
   btn.disabled = false;
+}
+
+function showResult(title, artist, lyrics) {
+  document.getElementById('song-title').textContent = title;
+  document.getElementById('song-artist').textContent = artist;
+  document.getElementById('lyrics').textContent = lyrics;
+  document.getElementById('card-song').classList.remove('hidden');
+  document.getElementById('card-lyrics').classList.remove('hidden');
+  document.getElementById('btn-copy').classList.remove('hidden');
+  document.getElementById('btn-clear').classList.remove('hidden');
+}
+
+function clearResults() {
+  document.getElementById('card-song').classList.add('hidden');
+  document.getElementById('card-lyrics').classList.add('hidden');
+  document.getElementById('btn-copy').classList.add('hidden');
+  document.getElementById('btn-clear').classList.add('hidden');
+  document.getElementById('song-title').textContent = '—';
+  document.getElementById('song-artist').textContent = '';
+  document.getElementById('lyrics').textContent = '';
+  document.getElementById('status').textContent = 'Pressione o botão e aponte o celular para a caixa de som';
 }
 
 function copyLyrics() {

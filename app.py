@@ -83,5 +83,14 @@ def identify():
     result['lyrics'] = fetch_lyrics(result['title'], result['artist'])
     return jsonify(result)
 
+@app.route('/search', methods=['POST'])
+def search():
+    data = request.get_json()
+    query = data.get('query', '').strip()
+    if not query:
+        return jsonify({'error': 'Nenhum termo informado'}), 400
+    lyrics = fetch_lyrics(query, '')
+    return jsonify({'lyrics': lyrics})
+
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=5000)
