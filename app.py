@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, render_template
-import time, base64, hashlib, hmac, requests, re
+import time, base64, hashlib, hmac, requests
 import syncedlyrics
 
 app = Flask(__name__)
@@ -44,14 +44,23 @@ def recognize(audio_bytes):
         pass
     return None
 
+def remove_timestamps(lyrics):
+    lines = lyrics.split('\n')
+    clean_lines = []
+    for line in lines:
+        if line.startswith('[') and ']' in line:
+            line = line[line.index(']') + 1:].strip()
+        if line:
+            clean_lines.append(line)
+    return '\n'.join(clean_lines)
+
 def fetch_lyrics(title, artist):
     try:
         lyrics = syncedlyrics.search(f"{title} {artist}")
         if not lyrics:
             lyrics = syncedlyrics.search(title)
         if lyrics:
-            clean = re.sub(r'|$$\d+:\d+\.\d+$$|', '', lyrics)
-            clean = '\n'.join(line.strip() for line in clean.splitlines() if line.strip())
+            clean = remove_timestamps(lyrics)
             return clean
         return 'Letra não encontrada. Busque manualmente no Holyrics.'
     except Exception as e:
